@@ -6,6 +6,9 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-windows:
     runs-on: windows-latest
@@ -24,9 +27,7 @@ jobs:
         run: npm ci
 
       - name: Build Windows installer
-        run: npm run build:win
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --win --publish never
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -34,7 +35,6 @@ jobs:
           name: windows-installer
           path: |
             dist/*.exe
-            dist/*.msi
 
   release:
     needs: build-windows
