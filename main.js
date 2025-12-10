@@ -517,8 +517,14 @@ function showMimdeskRequestWindow(data) {
 function acceptMimdeskConnection() {
   if (!currentMimdeskRequest || !socket) return;
 
-  const { controllerSocketId } = currentMimdeskRequest;
+  const { controllerSocketId, controllerName } = currentMimdeskRequest;
   const machineInfo = getMachineInfo();
+
+  // Önce request bilgisini sakla (session için)
+  const savedRequest = { ...currentMimdeskRequest };
+
+  // currentMimdeskRequest'i temizle ki pencere kapanınca reject gönderilmesin
+  currentMimdeskRequest = null;
 
   socket.emit('mimdesk:connection-accepted', {
     controllerSocketId,
@@ -534,7 +540,7 @@ function acceptMimdeskConnection() {
   }
 
   // Oturum penceresini aç
-  showMimdeskSessionWindow();
+  showMimdeskSessionWindow(savedRequest);
 }
 
 // Bağlantıyı reddet
@@ -553,7 +559,7 @@ function rejectMimdeskConnection(reason = 'Kullanıcı reddetti') {
 }
 
 // Oturum penceresi
-function showMimdeskSessionWindow() {
+function showMimdeskSessionWindow(requestData) {
   mimdeskSessionWindow = new BrowserWindow({
     width: 400,
     height: 200,
@@ -572,7 +578,7 @@ function showMimdeskSessionWindow() {
 
   mimdeskSessionWindow.webContents.on('did-finish-load', () => {
     mimdeskSessionWindow.webContents.send('session-start', {
-      controllerName: currentMimdeskRequest?.controllerName || 'IT Destek'
+      controllerName: requestData?.controllerName || 'IT Destek'
     });
   });
 
