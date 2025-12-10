@@ -291,9 +291,16 @@
         // Handle ICE candidates
         peerConnection.onicecandidate = (event) => {
           if (event.candidate && controllerSocketId) {
+            // Serialize ICE candidate properly - RTCIceCandidate needs to be converted to plain object
+            const candidateObj = {
+              candidate: event.candidate.candidate,
+              sdpMid: event.candidate.sdpMid,
+              sdpMLineIndex: event.candidate.sdpMLineIndex
+            };
+            console.log('Sending ICE candidate:', candidateObj.candidate.substring(0, 50) + '...');
             ipcRenderer.send('mimdesk:ice-candidate', {
               targetSocketId: controllerSocketId,
-              candidate: event.candidate
+              candidate: candidateObj
             });
           }
         };
