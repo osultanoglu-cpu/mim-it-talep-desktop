@@ -204,14 +204,48 @@ function connectSocket(token) {
     updateTrayIcon('offline');
   });
 
-  // Yeni mesaj
+  // Yeni mesaj (bireysel)
   socket.on('new_message', (data) => {
     showNotification('Yeni Mesaj', `${data.sender}: ${data.content}`);
   });
 
-  // Gelen arama
+  // Mesaj alındı (bireysel chat)
+  socket.on('message:receive', (data) => {
+    const senderName = data.sender?.fullName || 'Birisi';
+    const content = data.content?.substring(0, 100) || 'Yeni mesaj';
+    showNotification('Yeni Mesaj', `${senderName}: ${content}`);
+  });
+
+  // Grup mesajı bildirimi
+  socket.on('room:new_message', (data) => {
+    const roomName = data.roomName || 'Grup';
+    const sender = data.sender || 'Birisi';
+    const content = data.content?.substring(0, 100) || 'Yeni mesaj';
+    showNotification(`${roomName}`, `${sender}: ${content}`);
+  });
+
+  // Gelen arama (bireysel)
   socket.on('incoming_call', (data) => {
     showNotification('Gelen Arama', `${data.caller} arıyor...`, true);
+  });
+
+  // Gelen arama (bireysel - yeni format)
+  socket.on('call:incoming', (data) => {
+    const callerName = data.callerName || 'Birisi';
+    showNotification('Gelen Arama', `${callerName} arıyor...`, true);
+  });
+
+  // Grup araması bildirimi
+  socket.on('conference:incoming', (data) => {
+    const roomName = data.roomName || 'Grup';
+    const initiator = data.initiatorName || 'Birisi';
+    showNotification(`${roomName} - Grup Araması`, `${initiator} grup araması başlattı`, true);
+  });
+
+  // Grup araması bildirimi (web socket room'dan)
+  socket.on('conference:started', (data) => {
+    const initiator = data.initiatorName || 'Birisi';
+    showNotification('Grup Araması', `${initiator} grup araması başlattı`, true);
   });
 
   // Duyuru
@@ -219,6 +253,14 @@ function connectSocket(token) {
     showNotification('Duyuru', data.message, true);
     // Duyuru penceresi aç
     showBroadcastWindow(data);
+  });
+
+  // Duyuru (yeni format)
+  socket.on('broadcast:receive', (data) => {
+    const sender = data.sender?.fullName || 'Sistem';
+    const content = data.content?.substring(0, 100) || 'Yeni duyuru';
+    showNotification('Duyuru', `${sender}: ${content}`, true);
+    showBroadcastWindow({ message: content, sender });
   });
 
   // Yeni bildirim
