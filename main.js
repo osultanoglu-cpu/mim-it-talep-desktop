@@ -1,5 +1,6 @@
-const { app, BrowserWindow, Tray, Menu, Notification, ipcMain, nativeImage } = require('electron');
+const { app, BrowserWindow, Tray, Menu, Notification, ipcMain, nativeImage, desktopCapturer } = require('electron');
 const path = require('path');
+const os = require('os');
 const Store = require('electron-store');
 const AutoLaunch = require('auto-launch');
 const { io } = require('socket.io-client');
@@ -13,6 +14,13 @@ let tray = null;
 let socket = null;
 let isLoggedIn = false;
 let currentUser = null;
+
+// MimDesk değişkenleri
+let mimdeskRequestWindow = null;
+let mimdeskSessionWindow = null;
+let currentMimdeskRequest = null;
+let mimdeskPeerConnection = null;
+let mimdeskScreenStream = null;
 
 // Auto-launch ayarı
 const autoLauncher = new AutoLaunch({
@@ -197,6 +205,9 @@ function connectSocket(token) {
   socket.on('connect', () => {
     console.log('Socket bağlandı');
     updateTrayIcon('online');
+
+    // MimDesk Agent olarak kayıt ol
+    registerMimdeskAgent();
   });
 
   socket.on('disconnect', () => {
@@ -266,6 +277,46 @@ function connectSocket(token) {
   // Yeni bildirim
   socket.on('notification', (data) => {
     showNotification(data.title || 'Bildirim', data.message);
+  });
+
+  // =====================
+  // MimDesk Events
+  // =====================
+
+  // IT ekibinden bağlantı isteği
+  socket.on('mimdesk:connection-request', (data) => {
+    const { controllerId, controllerName, controllerSocketId } = data;
+    console.log(`MimDesk: Bağlantı isteği - ${controllerName}`);
+
+    currentMimdeskRequest = { controllerId, controllerName, controllerSocketId };
+
+    // Bildirim göster
+    showNotification('Uzaktan Destek İsteği', `${controllerName} bilgisayarınıza bağlanmak istiyor`, true);
+
+    // İstek penceresi aç
+    showMimdeskRequestWindow(data);
+  });
+
+  // WebRTC offer from controller
+  socket.on('mimdesk:webrtc-offer', async (data) => {
+    console.log('MimDesk: WebRTC offer alındı');
+    if (mimdeskSessionWindow) {
+      mimdeskSessionWindow.webContents.send('webrtc-offer', data);
+    }
+  });
+
+  // ICE candidate from controller
+  socket.on('mimdesk:ice-candidate', (data) => {
+    if (mimdeskSessionWindow) {
+      mimdeskSessionWindow.webContents.send('ice-candidate', data);
+    }
+  });
+
+  // Session ended by controller
+  socket.on('mimdesk:session-ended', (data) => {
+    console.log('MimDesk: Oturum sonlandırıldı');
+    showNotification('Uzaktan Destek', 'IT destek oturumu sonlandırıldı');
+    endMimdeskSession();
   });
 }
 
@@ -388,4 +439,216 @@ app.on('before-quit', () => {
 // Tüm pencereler kapandığında uygulamayı kapatma (tray'de kalsın)
 app.on('window-all-closed', (e) => {
   e.preventDefault();
+});
+
+// =====================
+// MimDesk Fonksiyonları
+// =====================
+
+// Makine bilgisi al
+function getMachineInfo() {
+  const networkInterfaces = os.networkInterfaces();
+  let ipAddress = 'Unknown';
+
+  for (const name of Object.keys(networkInterfaces)) {
+    for (const net of networkInterfaces[name]) {
+      if (net.family === 'IPv4' && !net.internal) {
+        ipAddress = net.address;
+        break;
+      }
+    }
+  }
+
+  return {
+    computerId: os.hostname(),
+    computerName: os.hostname(),
+    osInfo: `${os.platform()} ${os.release()}`,
+    ipAddress
+  };
+}
+
+// MimDesk Agent olarak kayıt ol
+function registerMimdeskAgent() {
+  if (!socket || !isLoggedIn) return;
+
+  const machineInfo = getMachineInfo();
+  socket.emit('mimdesk:register-agent', machineInfo);
+  console.log('MimDesk: Agent olarak kaydedildi', machineInfo.computerName);
+}
+
+// Bağlantı isteği penceresi
+function showMimdeskRequestWindow(data) {
+  if (mimdeskRequestWindow) {
+    mimdeskRequestWindow.focus();
+    mimdeskRequestWindow.webContents.send('request-data', data);
+    return;
+  }
+
+  mimdeskRequestWindow = new BrowserWindow({
+    width: 450,
+    height: 280,
+    alwaysOnTop: true,
+    resizable: false,
+    frame: true,
+    icon: path.join(__dirname, 'assets', 'icon.png'),
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false
+    }
+  });
+
+  mimdeskRequestWindow.loadFile('mimdesk-request.html');
+  mimdeskRequestWindow.setMenuBarVisibility(false);
+
+  mimdeskRequestWindow.webContents.on('did-finish-load', () => {
+    mimdeskRequestWindow.webContents.send('request-data', data);
+  });
+
+  mimdeskRequestWindow.on('closed', () => {
+    mimdeskRequestWindow = null;
+    // Pencere kapanırsa reddet
+    if (currentMimdeskRequest) {
+      rejectMimdeskConnection('Kullanıcı pencereyi kapattı');
+    }
+  });
+}
+
+// Bağlantıyı kabul et
+function acceptMimdeskConnection() {
+  if (!currentMimdeskRequest || !socket) return;
+
+  const { controllerSocketId } = currentMimdeskRequest;
+  const machineInfo = getMachineInfo();
+
+  socket.emit('mimdesk:connection-accepted', {
+    controllerSocketId,
+    computerId: machineInfo.computerId
+  });
+
+  console.log('MimDesk: Bağlantı kabul edildi');
+
+  // İstek penceresini kapat
+  if (mimdeskRequestWindow) {
+    mimdeskRequestWindow.close();
+    mimdeskRequestWindow = null;
+  }
+
+  // Oturum penceresini aç
+  showMimdeskSessionWindow();
+}
+
+// Bağlantıyı reddet
+function rejectMimdeskConnection(reason = 'Kullanıcı reddetti') {
+  if (!currentMimdeskRequest || !socket) return;
+
+  const { controllerSocketId } = currentMimdeskRequest;
+
+  socket.emit('mimdesk:connection-rejected', {
+    controllerSocketId,
+    reason
+  });
+
+  console.log('MimDesk: Bağlantı reddedildi -', reason);
+  currentMimdeskRequest = null;
+}
+
+// Oturum penceresi
+function showMimdeskSessionWindow() {
+  mimdeskSessionWindow = new BrowserWindow({
+    width: 400,
+    height: 200,
+    alwaysOnTop: true,
+    resizable: false,
+    frame: true,
+    icon: path.join(__dirname, 'assets', 'icon.png'),
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false
+    }
+  });
+
+  mimdeskSessionWindow.loadFile('mimdesk-session.html');
+  mimdeskSessionWindow.setMenuBarVisibility(false);
+
+  mimdeskSessionWindow.webContents.on('did-finish-load', () => {
+    mimdeskSessionWindow.webContents.send('session-start', {
+      controllerName: currentMimdeskRequest?.controllerName || 'IT Destek'
+    });
+  });
+
+  mimdeskSessionWindow.on('closed', () => {
+    mimdeskSessionWindow = null;
+    endMimdeskSession();
+  });
+}
+
+// Oturumu sonlandır
+function endMimdeskSession() {
+  if (mimdeskScreenStream) {
+    mimdeskScreenStream.getTracks().forEach(track => track.stop());
+    mimdeskScreenStream = null;
+  }
+
+  if (mimdeskPeerConnection) {
+    mimdeskPeerConnection.close();
+    mimdeskPeerConnection = null;
+  }
+
+  if (mimdeskSessionWindow) {
+    mimdeskSessionWindow.close();
+    mimdeskSessionWindow = null;
+  }
+
+  if (currentMimdeskRequest && socket) {
+    socket.emit('mimdesk:end-session', {
+      targetSocketId: currentMimdeskRequest.controllerSocketId
+    });
+  }
+
+  currentMimdeskRequest = null;
+  console.log('MimDesk: Oturum sonlandırıldı');
+}
+
+// IPC Handlers for MimDesk
+ipcMain.on('mimdesk:accept', () => {
+  acceptMimdeskConnection();
+});
+
+ipcMain.on('mimdesk:reject', (event, reason) => {
+  rejectMimdeskConnection(reason);
+  if (mimdeskRequestWindow) {
+    mimdeskRequestWindow.close();
+  }
+});
+
+ipcMain.on('mimdesk:end-session', () => {
+  endMimdeskSession();
+});
+
+ipcMain.handle('mimdesk:get-sources', async () => {
+  try {
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: 320, height: 180 }
+    });
+    return sources.map(source => ({
+      id: source.id,
+      name: source.name
+    }));
+  } catch (error) {
+    console.error('MimDesk: Ekran kaynağı alınamadı', error);
+    return [];
+  }
+});
+
+ipcMain.on('mimdesk:webrtc-answer', (event, data) => {
+  if (socket) {
+    socket.emit('mimdesk:webrtc-answer', data);
+  }
+});
+
+ipcMain.on('mimdesk:ice-candidate', (event, data) => {
+  if (socket) {
+    socket.emit('mimdesk:ice-candidate', data);
+  }
 });

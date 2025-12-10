@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Uzaktan Destek İsteği - MimDesk</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+      color: #fff;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .container {
+      text-align: center;
+      max-width: 400px;
+    }
+
+    .icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.1); }
+    }
+
+    h1 {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .subtitle {
+      color: #93c5fd;
+      font-size: 14px;
+      margin-bottom: 24px;
+    }
+
+    .requester {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 24px;
+    }
+
+    .requester-label {
+      font-size: 12px;
+      color: #93c5fd;
+      margin-bottom: 4px;
+    }
+
+    .requester-name {
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .warning {
+      background: rgba(251, 191, 36, 0.2);
+      border: 1px solid #fbbf24;
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 12px;
+      color: #fde68a;
+      margin-bottom: 24px;
+      text-align: left;
+    }
+
+    .buttons {
+      display: flex;
+      gap: 12px;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 14px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-accept {
+      background: #22c55e;
+      color: #fff;
+    }
+
+    .btn-accept:hover {
+      background: #16a34a;
+    }
+
+    .btn-reject {
+      background: #ef4444;
+      color: #fff;
+    }
+
+    .btn-reject:hover {
+      background: #dc2626;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="icon">🖥️</div>
+    <h1>Uzaktan Destek İsteği</h1>
+    <p class="subtitle">IT ekibi bilgisayarınıza bağlanmak istiyor</p>
+
+    <div class="requester">
+      <div class="requester-label">İsteği Gönderen</div>
+      <div class="requester-name" id="requesterName">IT Destek</div>
+    </div>
+
+    <div class="warning">
+      <strong>Dikkat:</strong> Kabul ettiğinizde, IT ekibi ekranınızı görebilir ve bilgisayarınızı kontrol edebilir.
+      Oturumu istediğiniz zaman sonlandırabilirsiniz.
+    </div>
+
+    <div class="buttons">
+      <button class="btn btn-reject" id="rejectBtn">Reddet</button>
+      <button class="btn btn-accept" id="acceptBtn">Kabul Et</button>
+    </div>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+
+    const requesterNameEl = document.getElementById('requesterName');
+    const acceptBtn = document.getElementById('acceptBtn');
+    const rejectBtn = document.getElementById('rejectBtn');
+
+    // Veri al
+    ipcRenderer.on('request-data', (event, data) => {
+      if (data.controllerName) {
+        requesterNameEl.textContent = data.controllerName;
+      }
+    });
+
+    // Kabul et
+    acceptBtn.addEventListener('click', () => {
+      ipcRenderer.send('mimdesk:accept');
+    });
+
+    // Reddet
+    rejectBtn.addEventListener('click', () => {
+      ipcRenderer.send('mimdesk:reject', 'Kullanıcı reddetti');
+    });
+  </script>
+</body>
+</html>

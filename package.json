@@ -1,7 +1,7 @@
 {
   "name": "mim-it-talep",
-  "version": "1.1.0",
-  "description": "MİM IT Talep ve Bildirim Sistemi",
+  "version": "2.0.0",
+  "description": "MİM IT Talep, Bildirim ve Uzaktan Destek Sistemi",
   "main": "main.js",
   "scripts": {
     "start": "electron .",

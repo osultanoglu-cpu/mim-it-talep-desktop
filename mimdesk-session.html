@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Uzaktan Destek Aktif - MimDesk</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: linear-gradient(135deg, #065f46 0%, #064e3b 100%);
+      color: #fff;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .container {
+      text-align: center;
+      max-width: 360px;
+    }
+
+    .status-icon {
+      width: 60px;
+      height: 60px;
+      background: rgba(34, 197, 94, 0.3);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 16px;
+      animation: pulse 2s infinite;
+    }
+
+    .status-icon span {
+      font-size: 28px;
+    }
+
+    @keyframes pulse {
+      0%, 100% {
+        box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4);
+      }
+      50% {
+        box-shadow: 0 0 0 15px rgba(34, 197, 94, 0);
+      }
+    }
+
+    h1 {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #86efac;
+    }
+
+    .subtitle {
+      color: #a7f3d0;
+      font-size: 13px;
+      margin-bottom: 20px;
+    }
+
+    .controller-info {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      padding: 12px 16px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .controller-avatar {
+      width: 40px;
+      height: 40px;
+      background: #22c55e;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .controller-details {
+      text-align: left;
+    }
+
+    .controller-label {
+      font-size: 11px;
+      color: #a7f3d0;
+    }
+
+    .controller-name {
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .timer {
+      font-size: 24px;
+      font-weight: 300;
+      color: #86efac;
+      margin-bottom: 20px;
+      font-family: monospace;
+    }
+
+    .btn-end {
+      width: 100%;
+      padding: 14px 24px;
+      background: #ef4444;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-end:hover {
+      background: #dc2626;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="status-icon">
+      <span>🖥️</span>
+    </div>
+    <h1>Uzaktan Destek Aktif</h1>
+    <p class="subtitle">Ekranınız IT ekibi tarafından görüntüleniyor</p>
+
+    <div class="controller-info">
+      <div class="controller-avatar" id="controllerInitial">IT</div>
+      <div class="controller-details">
+        <div class="controller-label">Bağlı Kullanıcı</div>
+        <div class="controller-name" id="controllerName">IT Destek</div>
+      </div>
+    </div>
+
+    <div class="timer" id="timer">00:00:00</div>
+
+    <button class="btn-end" id="endBtn">Oturumu Sonlandır</button>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+
+    const controllerNameEl = document.getElementById('controllerName');
+    const controllerInitialEl = document.getElementById('controllerInitial');
+    const timerEl = document.getElementById('timer');
+    const endBtn = document.getElementById('endBtn');
+
+    let startTime = Date.now();
+    let timerInterval;
+
+    // Oturum verisi
+    ipcRenderer.on('session-start', (event, data) => {
+      if (data.controllerName) {
+        controllerNameEl.textContent = data.controllerName;
+        controllerInitialEl.textContent = data.controllerName.charAt(0).toUpperCase();
+      }
+      startTimer();
+      startScreenShare();
+    });
+
+    // WebRTC offer
+    ipcRenderer.on('webrtc-offer', async (event, data) => {
+      const { senderSocketId, offer } = data;
+
+      if (peerConnection) {
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+
+        ipcRenderer.send('mimdesk:webrtc-answer', {
+          targetSocketId: senderSocketId,
+          answer: peerConnection.localDescription
+        });
+      }
+    });
+
+    // ICE candidate
+    ipcRenderer.on('ice-candidate', async (event, data) => {
+      const { candidate } = data;
+      if (peerConnection && candidate) {
+        try {
+          await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (e) {
+          console.error('ICE candidate error:', e);
+        }
+      }
+    });
+
+    // Timer
+    function startTimer() {
+      startTime = Date.now();
+      timerInterval = setInterval(() => {
+        const elapsed = Date.now() - startTime;
+        const hours = Math.floor(elapsed / 3600000);
+        const minutes = Math.floor((elapsed % 3600000) / 60000);
+        const seconds = Math.floor((elapsed % 60000) / 1000);
+
+        timerEl.textContent = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+      }, 1000);
+    }
+
+    // WebRTC
+    let peerConnection = null;
+    let screenStream = null;
+
+    async function startScreenShare() {
+      try {
+        const sources = await ipcRenderer.invoke('mimdesk:get-sources');
+        if (sources.length === 0) {
+          console.error('No screen sources');
+          return;
+        }
+
+        screenStream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            mandatory: {
+              chromeMediaSource: 'desktop',
+              chromeMediaSourceId: sources[0].id,
+              maxWidth: 1920,
+              maxHeight: 1080,
+              maxFrameRate: 30
+            }
+          }
+        });
+
+        // Create peer connection
+        const iceServers = [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ];
+
+        peerConnection = new RTCPeerConnection({ iceServers });
+
+        // Add screen track
+        screenStream.getTracks().forEach(track => {
+          peerConnection.addTrack(track, screenStream);
+        });
+
+        // Handle ICE candidates
+        peerConnection.onicecandidate = (event) => {
+          if (event.candidate) {
+            ipcRenderer.send('mimdesk:ice-candidate', {
+              targetSocketId: null, // Will be filled by main process
+              candidate: event.candidate
+            });
+          }
+        };
+
+        console.log('Screen share started');
+      } catch (error) {
+        console.error('Screen share error:', error);
+      }
+    }
+
+    // Oturumu sonlandır
+    endBtn.addEventListener('click', () => {
+      if (timerInterval) {
+        clearInterval(timerInterval);
+      }
+      if (screenStream) {
+        screenStream.getTracks().forEach(track => track.stop());
+      }
+      if (peerConnection) {
+        peerConnection.close();
+      }
+      ipcRenderer.send('mimdesk:end-session');
+    });
+  </script>
+</body>
+</html>
