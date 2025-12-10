@@ -160,33 +160,49 @@
     let startTime = Date.now();
     let timerInterval;
 
+    // WebRTC
+    let peerConnection = null;
+    let screenStream = null;
+    let controllerSocketId = null;
+
     // Oturum verisi
-    ipcRenderer.on('session-start', (event, data) => {
+    ipcRenderer.on('session-start', async (event, data) => {
       if (data.controllerName) {
         controllerNameEl.textContent = data.controllerName;
         controllerInitialEl.textContent = data.controllerName.charAt(0).toUpperCase();
       }
+      controllerSocketId = data.controllerSocketId;
       startTimer();
-      startScreenShare();
+      // Screen share'i başlat ama offer bekle
+      await initScreenShare();
     });
 
-    // WebRTC offer
+    // WebRTC offer from controller
     ipcRenderer.on('webrtc-offer', async (event, data) => {
+      console.log('Received WebRTC offer');
       const { senderSocketId, offer } = data;
+      controllerSocketId = senderSocketId;
 
-      if (peerConnection) {
+      if (!peerConnection) {
+        await initScreenShare();
+      }
+
+      try {
         await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
         const answer = await peerConnection.createAnswer();
         await peerConnection.setLocalDescription(answer);
 
+        console.log('Sending WebRTC answer');
         ipcRenderer.send('mimdesk:webrtc-answer', {
           targetSocketId: senderSocketId,
           answer: peerConnection.localDescription
         });
+      } catch (error) {
+        console.error('Error handling offer:', error);
       }
     });
 
-    // ICE candidate
+    // ICE candidate from controller
     ipcRenderer.on('ice-candidate', async (event, data) => {
       const { candidate } = data;
       if (peerConnection && candidate) {
@@ -211,11 +227,8 @@
       }, 1000);
     }
 
-    // WebRTC
-    let peerConnection = null;
-    let screenStream = null;
-
-    async function startScreenShare() {
+    // Initialize screen share and peer connection
+    async function initScreenShare() {
       try {
         const sources = await ipcRenderer.invoke('mimdesk:get-sources');
         if (sources.length === 0) {
@@ -251,15 +264,19 @@
 
         // Handle ICE candidates
         peerConnection.onicecandidate = (event) => {
-          if (event.candidate) {
+          if (event.candidate && controllerSocketId) {
             ipcRenderer.send('mimdesk:ice-candidate', {
-              targetSocketId: null, // Will be filled by main process
+              targetSocketId: controllerSocketId,
               candidate: event.candidate
             });
           }
         };
 
-        console.log('Screen share started');
+        peerConnection.onconnectionstatechange = () => {
+          console.log('Connection state:', peerConnection.connectionState);
+        };
+
+        console.log('Screen share initialized, waiting for offer');
       } catch (error) {
         console.error('Screen share error:', error);
       }

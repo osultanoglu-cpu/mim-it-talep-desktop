@@ -578,7 +578,8 @@ function showMimdeskSessionWindow(requestData) {
 
   mimdeskSessionWindow.webContents.on('did-finish-load', () => {
     mimdeskSessionWindow.webContents.send('session-start', {
-      controllerName: requestData?.controllerName || 'IT Destek'
+      controllerName: requestData?.controllerName || 'IT Destek',
+      controllerSocketId: requestData?.controllerSocketId
     });
   });
 
