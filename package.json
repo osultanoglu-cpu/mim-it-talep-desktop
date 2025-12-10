@@ -1,6 +1,6 @@
 {
   "name": "mim-it-talep",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "description": "MİM IT Talep, Bildirim ve Uzaktan Destek Sistemi",
   "main": "main.js",
   "scripts": {

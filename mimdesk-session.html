@@ -188,14 +188,25 @@
       }
 
       try {
+        console.log('Setting remote description from offer');
         await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+
+        console.log('Creating answer');
         const answer = await peerConnection.createAnswer();
+
+        console.log('Setting local description');
         await peerConnection.setLocalDescription(answer);
 
-        console.log('Sending WebRTC answer');
+        // Serialize answer properly - RTCSessionDescription needs to be converted to plain object
+        const answerObj = {
+          type: peerConnection.localDescription.type,
+          sdp: peerConnection.localDescription.sdp
+        };
+
+        console.log('Sending WebRTC answer:', answerObj.type);
         ipcRenderer.send('mimdesk:webrtc-answer', {
           targetSocketId: senderSocketId,
-          answer: peerConnection.localDescription
+          answer: answerObj
         });
       } catch (error) {
         console.error('Error handling offer:', error);
